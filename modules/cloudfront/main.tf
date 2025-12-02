@@ -1,3 +1,5 @@
+# 1. Origin Access Control (OAC)
+# Ensures S3 only accepts requests signed by CloudFront.
 resource "aws_cloudfront_origin_access_control" "oac" {
   name                              = "s3-oac-${var.project_name}"
   origin_access_control_origin_type = "s3"
@@ -5,6 +7,8 @@ resource "aws_cloudfront_origin_access_control" "oac" {
   signing_protocol                  = "sigv4"
 }
 
+# 2. Distribution
+# The actual CDN resource.
 resource "aws_cloudfront_distribution" "s3_distribution" {
   origin {
     domain_name              = var.bucket_domain_name
@@ -14,6 +18,8 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 
   enabled             = true
   is_ipv6_enabled     = true
+  
+  # Parameterized to allow changes without editing module code
   default_root_object = var.default_root_object
   price_class         = var.price_class
 
@@ -28,7 +34,8 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
       query_string = false
       cookies { forward = "none" }
     }
-
+    
+    # Enforce HTTPS for security
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
     default_ttl            = 3600
@@ -36,9 +43,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   }
 
   restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
+    geo_restriction { restriction_type = "none" }
   }
 
   viewer_certificate {

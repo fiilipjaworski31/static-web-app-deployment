@@ -38,11 +38,9 @@ jobs:
   init:
     name: "Init & Validate"
     runs-on: ubuntu-latest
-    
     permissions:
       id-token: write
       contents: read
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -84,13 +82,14 @@ jobs:
         continue-on-error: true
 
       - name: Post validation summary
+        if: always()
         run: |
           echo "## Terraform Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Format | ${{ steps.fmt.outcome == 'success' && '✅ Passed' || '⚠️ Warning' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Init | ${{ steps.init.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Validate | ${{ steps.validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Format | ${{ steps.fmt.outcome == 'success' && ' ✅  Passed' || ' ⚠️  Warning' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Init | ${{ steps.init.outcome == 'success' && ' ✅  Passed' || ' ❌  Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate | ${{ steps.validate.outcome == 'success' && ' ✅  Passed' || ' ❌  Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # PLAN
@@ -100,15 +99,12 @@ jobs:
     name: "Terraform Plan"
     runs-on: ubuntu-latest
     needs: init
-    
     permissions:
       id-token: write
       contents: read
       pull-requests: write
-
     outputs:
       plan_exit_code: ${{ steps.plan.outputs.exitcode }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -129,11 +125,22 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -var-file="${{ env.TF_VAR_FILE }}" -out=tfplan
+        run: |
+          # Run plan and capture exit code
+          terraform plan -var-file="${{ env.TF_VAR_FILE }}" -out=tfplan -detailed-exitcode
         continue-on-error: true
 
+      - name: Check Plan Status
+        id: check_plan
+        run: |
+          if [ -f tfplan ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload Plan Artifact
-        if: steps.plan.outcome == 'success'
+        if: steps.check_plan.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ github.sha }}
@@ -146,35 +153,13 @@ jobs:
           echo "## Terraform Plan Output" >> $GITHUB_STEP_SUMMARY
           if [ -f tfplan ]; then
             echo '```' >> $GITHUB_STEP_SUMMARY
-            terraform show tfplan -no-color >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Could not display plan" >> $GITHUB_STEP_SUMMARY
+            terraform show tfplan -no-color >> $GITHUB_STEP_SUMMARY 2>&1 || echo "Could not read plan file" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ No plan file generated" >> $GITHUB_STEP_SUMMARY
+             echo " ⚠️  No plan file generated. Check Terraform logs for details." >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const output = `## Terraform Plan Results
-            
-            | Step | Result |
-            |------|--------|
-            | Plan | ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }} |
-            
-            *Plan artifact: \`tfplan-${{ github.sha }}\`*
-            
-            > Pushed by: @${{ github.actor }}`;
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            });
-
-      - name: Fail if plan failed
+      - name: Fail workflow on Plan Error
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
@@ -187,14 +172,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: plan
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
-    
     environment:
       name: production
-    
+      url: ${{ steps.apply.outputs.website_url }}
     permissions:
       id-token: write
       contents: read
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -220,12 +203,16 @@ jobs:
 
       - name: Terraform Apply
         id: apply
-        run: terraform apply -auto-approve tfplan
+        run: |
+          terraform apply -auto-approve tfplan
+          echo "website_url=$(terraform output -raw website_url)" >> $GITHUB_OUTPUT
 
       - name: Apply Summary
         if: always()
         run: |
-          echo "## Terraform Apply Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## Terraform Apply Complete!  🚀 " >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Website URL:** $(terraform output -raw website_url 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Outputs:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
@@ -239,14 +226,11 @@ jobs:
     name: "Terraform Destroy"
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
-    
     environment:
-      name: production
-    
+      name: destroy-protection
     permissions:
       id-token: write
       contents: read
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -271,5 +255,5 @@ jobs:
       - name: Destroy Summary
         if: always()
         run: |
-          echo "## Terraform Destroy Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## Terraform Destroy Complete!  🗑️ " >> $GITHUB_STEP_SUMMARY
           echo "All resources have been destroyed." >> $GITHUB_STEP_SUMMARY

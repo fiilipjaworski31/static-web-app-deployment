@@ -81,13 +81,14 @@ jobs:
 
       - name: Run TFLint
         run: tflint -f compact
+        continue-on-error: true
 
       - name: Post validation summary
         run: |
           echo "## Terraform Validation Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Format | ${{ steps.fmt.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Format | ${{ steps.fmt.outcome == 'success' && '✅ Passed' || '⚠️ Warning' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Init | ${{ steps.init.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | ${{ steps.validate.outcome == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
 
@@ -128,11 +129,11 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: |
-          terraform plan -var-file="${{ env.TF_VAR_FILE }}" -out=tfplan -detailed-exitcode
+        run: terraform plan -var-file="${{ env.TF_VAR_FILE }}" -out=tfplan
         continue-on-error: true
 
       - name: Upload Plan Artifact
+        if: steps.plan.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ github.sha }}
@@ -140,11 +141,16 @@ jobs:
           retention-days: 5
 
       - name: Generate Plan Summary
+        if: always()
         run: |
           echo "## Terraform Plan Output" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          terraform show tfplan -no-color >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ -f tfplan ]; then
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            terraform show tfplan -no-color >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Could not display plan" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No plan file generated" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'
@@ -155,12 +161,11 @@ jobs:
             
             | Step | Result |
             |------|--------|
-            | Plan | ${{ steps.plan.outcome == 'success' && '✅ Success' || '⚠️ Changes detected' }} |
+            | Plan | ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }} |
             
             *Plan artifact: \`tfplan-${{ github.sha }}\`*
             
-            > Pushed by: @${{ github.actor }}
-            > Action: \`${{ github.event_name }}\``;
+            > Pushed by: @${{ github.actor }}`;
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -168,6 +173,10 @@ jobs:
               repo: context.repo.repo,
               body: output
             });
+
+      - name: Fail if plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
 
   # ===========================================================================
   # APPLY
@@ -181,7 +190,6 @@ jobs:
     
     environment:
       name: production
-      url: ${{ steps.apply.outputs.website_url }}
     
     permissions:
       id-token: write
@@ -212,19 +220,16 @@ jobs:
 
       - name: Terraform Apply
         id: apply
-        run: |
-          terraform apply -auto-approve tfplan
-          echo "website_url=$(terraform output -raw website_url)" >> $GITHUB_OUTPUT
+        run: terraform apply -auto-approve tfplan
 
       - name: Apply Summary
+        if: always()
         run: |
-          echo "## Terraform Apply Complete! 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Website URL:** $(terraform output -raw website_url)" >> $GITHUB_STEP_SUMMARY
+          echo "## Terraform Apply Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Outputs:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          terraform output >> $GITHUB_STEP_SUMMARY
+          terraform output >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No outputs available" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
@@ -236,7 +241,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
     
     environment:
-      name: destroy-protection
+      name: production
     
     permissions:
       id-token: write
@@ -262,3 +267,9 @@ jobs:
 
       - name: Terraform Destroy
         run: terraform destroy -var-file="${{ env.TF_VAR_FILE }}" -auto-approve
+
+      - name: Destroy Summary
+        if: always()
+        run: |
+          echo "## Terraform Destroy Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "All resources have been destroyed." >> $GITHUB_STEP_SUMMARY

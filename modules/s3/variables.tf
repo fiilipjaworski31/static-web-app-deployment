@@ -4,44 +4,94 @@ variable "bucket_name" {
 }
 
 variable "cloudfront_arn" {
-  description = "ARN of the CloudFront distribution"
+  description = "ARN of the CloudFront distribution for bucket policy"
   type        = string
 }
 
-variable "tags" {
-  description = "Tag map"
-  type        = map(string)
-  default     = {}
-}
-
 variable "force_destroy" {
-  description = "Force destroy bucket"
+  description = "Allow bucket deletion even when not empty (use with caution)"
   type        = bool
   default     = false
 }
 
-# --- Content ---
-variable "index_document" { type = string }
-variable "content_type" { type = string }
-variable "source_file_path" { type = string }
-
-# --- Public Access (defaults added!) ---
+# ------------------------------------------------------------------------------
+# Public Access Block Settings
+# All default to true for security - override only if necessary
+# ------------------------------------------------------------------------------
 variable "block_public_acls" {
-  type    = bool
-  default = true
+  description = "Block public ACLs for this bucket"
+  type        = bool
+  default     = true
 }
 
 variable "block_public_policy" {
-  type    = bool
-  default = true
+  description = "Block public bucket policies"
+  type        = bool
+  default     = true
 }
 
 variable "ignore_public_acls" {
-  type    = bool
-  default = true
+  description = "Ignore public ACLs for this bucket"
+  type        = bool
+  default     = true
 }
 
 variable "restrict_public_buckets" {
-  type    = bool
-  default = true
+  description = "Restrict public bucket policies"
+  type        = bool
+  default     = true
+}
+
+# ------------------------------------------------------------------------------
+# Content Configuration
+# ------------------------------------------------------------------------------
+variable "index_document" {
+  description = "Name of the index document (e.g., index.html)"
+  type        = string
+}
+
+variable "content_type" {
+  description = "MIME type of the content"
+  type        = string
+}
+
+variable "source_file_path" {
+  description = "Local path to the source file to upload"
+  type        = string
+}
+
+# ------------------------------------------------------------------------------
+# Versioning & Encryption
+# ------------------------------------------------------------------------------
+variable "versioning_enabled" {
+  description = "Enable versioning for the bucket"
+  type        = bool
+  default     = false
+}
+
+variable "sse_algorithm" {
+  description = "Server-side encryption algorithm: AES256 or aws:kms"
+  type        = string
+  default     = "AES256"
+}
+
+variable "tags" {
+  description = "Tags to apply to S3 resources"
+  type        = map(string)
+  default     = {}
+}
+
+# ------------------------------------------------------------------------------
+# Error Pages Configuration
+# ------------------------------------------------------------------------------
+variable "error_pages" {
+  description = "Map of error pages to upload. Key is filename, value is local path"
+  type        = map(string)
+  default     = {}
+}
+
+variable "error_pages_content_type" {
+  description = "MIME type for error pages"
+  type        = string
+  default     = "text/html"
 }

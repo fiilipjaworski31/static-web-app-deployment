@@ -1,12 +1,8 @@
 locals {
-  # Ensures consistent naming convention across all resources
+  # Consistent naming convention across all resources
   full_project_name = "${var.project_name}-${var.environment}"
 
-  # Tags are passed to all modules to ensure cost allocation and tracking
-  common_tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-    Owner       = "DevOps Team"
-  }
+  # Additional tags beyond default_tags (for module-specific tagging)
+  # Default tags (Project, Environment, ManagedBy, Owner) are set in providers.tf
+  common_tags = {}
 }
